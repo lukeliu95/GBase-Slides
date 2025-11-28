@@ -1,97 +1,269 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { PresentationAnalysis, TextRichness, StyleSuggestion, SlideCountOption } from "../types";
 
-const ANALYSIS_MODEL = "gemini-3-pro-preview";
-const VISION_MODEL = "gemini-2.5-flash"; // Fast multimodal model for style extraction
-const IMAGE_MODEL = "gemini-3-pro-image-preview";
+// ============================================================================
+// 🔧 Model Configuration
+// ============================================================================
+const ANALYSIS_MODEL = "gemini-2.5-pro"; 
+const VISION_MODEL = "gemini-2.5-flash";
+// Switch to Gemini 3 Pro Image Preview for high-quality, multimodal generation
+const IMAGE_MODEL = "gemini-3-pro-image-preview"; 
 
-export const DEFAULT_SYSTEM_PROMPT = `Background（背景）
-用户拥有一份文本文档（如文章、报告或笔记），希望将其转化为一份具有高度视觉美感和叙事深度的 PPT 演示文稿。
-用户希望模仿 【日式精美商业杂志：极简、充满智性、通过隐喻和光影来传达情感】。
-关键要求：生成的图片必须同时包含视觉画面和文字内容，实现图文一体化设计。
+// ============================================================================
+// 🎯 核心优化：重构系统提示词，增强语言一致性和智能风格规划
+// ============================================================================
 
-Role（角色）
-你是指挥官级的"视觉叙事设计师（Visual Narrative Designer）"。
-你具备以下核心能力：
-1、自动语言识别能力：能够自动检测用户提供文档的语言，并在整个工作流程中使用相同语言进行交互和输出。
-2、跨语言理解能力：能够准确阅读任何语言的源文档（中文/英文/日文/法文等）。
-3、图文融合设计能力：擅长将文字内容与视觉画面有机结合，创造既美观又信息完整的图像。
-4、隐喻转化能力：擅长将抽象概念转化为具体的视觉意象。
-5、艺术指导能力：精通光线、构图、色彩心理学和文字排版设计。
+export const DEFAULT_SYSTEM_PROMPT = `视觉叙事设计师 (Visual Narrative Designer) v3.5
 
-Objectives（目标/任务）
-请完成以下核心任务流程：
-1、语言自动识别： 
-自动检测用户输入文档的语言
-确认检测到的语言并告知用户
-后续所有对话、分析、提示词生成均使用该语言
+背景
+将文本文档转化为具有视觉震撼力、叙事驱动的幻灯片演示文稿（基于图像）。
+核心产出: 一系列高保真图像提示词（Image Prompt）和文本内容。
 
-2、内容分析与隐喻构建： 
-深度阅读文档，提取核心观点
-建立贯穿始终的视觉隐喻系统
-为每页规划需要在图片中显示的关键文字内容
+角色
+您是一位专业的“视觉叙事设计师”，具备两项关键能力：
 
-3、生成图文融合的分页提示词： 
-根据 PPT 叙事结构，为每一页生成具体的图像提示词。
-**智能页数规划**：请勿局限于固定页数。根据文档内容的丰富程度、逻辑段落和叙事节奏，智能决定幻灯片的页数（通常在 5 到 15 页之间）。长文多页，短文少页，确保信息传达完整。
-**视觉一致性**：确保每一页的视觉场景（Visual Scene）都严格呼应全局视觉风格，使整套幻灯片具有统一的艺术调性。
+1. 语言专家 (Language Specialist)：
+   - 必须检测输入文本的语言 (Detected Language)。
+   - **CRITICAL**: 所有输出字段（visualPrompt, textContent, explanation）必须完全使用检测到的语言。
+   - 例子：如果输入是中文，则 visualPrompt 必须用中文描述画面，explanation 用中文解释。
 
-4、强制约束： 
-所有灰色代码块内的图像提示词（Prompt）必须使用检测到的文档语言
-提示词中必须包含具体的文字内容和文字设计要求
+2. 自适应艺术总监 (Adaptive Art Director)：
+   - 拒绝通用模板，根据内容情感定制视觉识别。
 
-CRITICAL OUTPUT INSTRUCTION:
-You must return a JSON object strictly strictly adhering to the provided 'responseSchema'.
-Map the "Key Result" sections to the JSON fields as follows:
-- 【Step 1】 -> detectedLanguage
-- 【Step 2】 -> globalStyleDefinition
-- 【Step 3】 -> slides array.
-    - IMPORTANT: The 'visualPrompt' field for each slide must be a consolidated paragraph containing ALL the information from the "Prompt Block" (Visual Scene, Text Content, Text Design, Metaphor, Mood, Tech Specs). This prompt will be sent directly to the image generator.
-    - '[检测语言]解读' -> explanation
-- 【Step 4】 -> visualCoherence`;
+目标 (核心任务流程)：
+
+【步骤 1】语言识别 (Language Detection)
+分析输入文本以确定其主要语言。
+设置 detectedLanguage 字段（例如：“中文”、“English”、“日本語”）。
+
+【步骤 2】全局视觉风格 (Global Visual Style)
+自动风格模式 (Auto Style Mode)：
+如果用户选择“自动 (Auto)”，您必须忽略所有预设，并根据文本的情感和语义创建完全定制的视觉识别。
+**强制要求 (MANDATORY)**：
+背景必须是纯白色 (#FFFFFF) 或超浅米色 (#F8F9FA)。
+要求：每页应采用更多的小图组合（信息图表/元素），让内容充实饱满，介绍文本丰富详细。
+禁止：深色背景、复杂渐变。
+
+【步骤 3】幻灯片规划 (Slide Planning)
+生成幻灯片。对于每张幻灯片：
+- visualPrompt: 以 detectedLanguage 撰写详细的图像生成提示词。
+- textContent: 以 detectedLanguage 撰写幻灯片文本。
+- explanation: 以 detectedLanguage 解释设计选择。
+
+关键输出指令 (CRITICAL OUTPUT INSTRUCTION)
+1. 语言一致性：detectedLanguage 必须准确。输出内容必须与 detectedLanguage 一致。
+2. 自动风格：图片提示词内容丰富详细。
+3. 格式：返回严格的 JSON 格式。
+`;
+
+// ============================================================================
+// 🎨 风格预设库 - 根据文档类型智能推荐
+// ============================================================================
+
+export const STYLE_PRESETS = {
+  business_modern: {
+    label: "现代商务 (Modern Business)",
+    description: `
+      风格: 现代商务矢量插画，扁平化设计，轮廓线条清晰
+      配色: 白色背景，深炭灰轮廓，柔和赤陶色/软鲑鱼橙点缀
+      元素: 极简线条艺术，无脸职业人物，B2B科技概念图标
+      氛围: 专业、高效、智慧、值得信赖
+      技术: Style=Raw Flat Vector; No shadows/gradients/3d/photorealistic
+    `
+  },
+  business_premium: {
+    label: "高端商务 (Premium Corporate)",
+    description: `
+      风格: 高端企业质感，深色主题，金属与玻璃质感
+      配色: 深蓝/深灰背景，金色/银色点缀，渐变光效
+      元素: 抽象几何形状，数据流可视化，城市天际线剪影
+      氛围: 权威、前瞻、国际化、高价值感
+      技术: Style=Cinematic 3D; Dramatic lighting; Depth of field
+    `
+  },
+  creative_vibrant: {
+    label: "活力创意 (Vibrant Creative)",
+    description: `
+      风格: 大胆用色，动态构图，几何形状叠加
+      配色: 高饱和度对比色，霓虹色系，渐变过渡
+      元素: 抽象形状，流动线条，孟菲斯风格元素
+      氛围: 年轻、活力、创新、打破常规
+      技术: Style=Bold Graphic Design; High contrast; Dynamic composition
+    `
+  },
+  creative_minimal: {
+    label: "极简创意 (Minimal Creative)",
+    description: `
+      风格: 留白艺术，单色系，强调字体排版
+      配色: 大面积白/米色，单一强调色，微妙灰度
+      元素: 几何线条，负空间运用，点线面构成
+      氛围: 优雅、精致、专注、高级感
+      技术: Style=Swiss Design; Clean typography; Generous whitespace
+    `
+  },
+  japanese_magazine: {
+    label: "日系杂志 (Japanese Editorial)",
+    description: `
+      风格: 日本高端商业杂志，极简智性，隐喻与光影
+      配色: 柔和自然色，米白/浅灰基调，点缀深色
+      元素: 摄影与插画融合，大量留白，竖排文字
+      氛围: 内敛、深度、诗意、东方美学
+      技术: Style=Japanese Editorial; Wabi-sabi aesthetic; Thoughtful spacing
+    `
+  },
+  japanese_anime: {
+    label: "日系动漫 (Anime Style)",
+    description: `
+      风格: 现代日本动漫/插画风格，赛璐璐着色
+      配色: 鲜明但和谐的色彩，柔和阴影，梦幻光效
+      元素: 细腻线条，角色化表达，场景氛围感
+      氛围: 活泼、治愈、故事感、二次元美学
+      技术: Style=Anime illustration; Cel shading; Soft glow effects
+    `
+  },
+  tech_futuristic: {
+    label: "科技未来 (Futuristic Tech)",
+    description: `
+      风格: 赛博朋克/科幻感，深色UI风格
+      配色: 深色背景，电蓝/电紫/霓虹绿高亮
+      元素: 电路纹理，数据可视化，全息效果
+      氛围: 前沿、智能、数字化、未来感
+      技术: Style=Cyberpunk UI; Holographic effects; Grid patterns
+    `
+  },
+  tech_clean: {
+    label: "清爽科技 (Clean Tech)",
+    description: `
+      风格: Apple/Google风格，干净利落，友好易懂
+      配色: 白色/浅灰背景，品牌色点缀，柔和渐变
+      元素: 简洁图标，等距插画，产品截图
+      氛围: 友好、可靠、现代、用户中心
+      技术: Style=Product Design; Isometric; Soft shadows
+    `
+  },
+  educational: {
+    label: "教育说明 (Educational)",
+    description: `
+      风格: 清晰易懂，信息分层，引导性设计
+      配色: 柔和但区分度高的配色，功能性用色
+      元素: 图解、流程图、对比图、时间线
+      氛围: 专业、可信、易学、系统化
+      技术: Style=Infographic; Clear hierarchy; Instructional design
+    `
+  },
+  organic_natural: {
+    label: "自然有机 (Organic Natural)",
+    description: `
+      风格: 自然质感，手工感，温暖人文
+      配色: 大地色系，绿色/棕色/米色，自然渐变
+      元素: 植物纹理，手绘元素，纸质质感
+      氛围: 温暖、真实、可持续、人文关怀
+      技术: Style=Organic textures; Hand-drawn elements; Earthy tones
+    `
+  }
+};
+
+// ============================================================================
+// 📊 内容丰富度策略
+// ============================================================================
+
+export const RICHNESS_STRATEGIES = {
+  concise: {
+    label: "精简模式 (Concise)",
+    instruction: `
+【Step 3 特别指令：文本密度 - 精简模式】
+- 画面占比 > 85%。
+- 主标题：< 8个字 / 6个单词。
+- 禁止大段文字。
+    `
+  },
+  rich: {
+    label: "详实模式 (Rich)",
+    instruction: `
+【Step 3 特别指令：文本密度 - 详实模式】
+- 画面与文字 5:5 平衡。
+- 允许 3-5 个要点或简短段落。
+- 信息层级清晰。
+    `
+  },
+  auto: {
+    label: "智能模式 (Auto)",
+    instruction: `
+【Step 3 特别指令：文本密度 - 智能模式】
+- 采用更多的小图组合（信息图表/元素）。
+- 每页可以多个段落详细表达内容。
+- 内容详实，更适合沟通讲解。
+    `
+  }
+};
+
+// ============================================================================
+// 📄 智能页数规划逻辑
+// ============================================================================
+
+const SLIDE_COUNT_LOGIC = {
+  auto: `
+**【智能页数规划系统】**
+- 分析内容量和复杂度。
+- 基础页数 = 4 + 核心观点数。
+- 范围约束：5 ~ 15页。
+  `,
+  fixed: (count: number) => `
+**【固定页数要求】**
+严格按照 **${count} 页** 进行内容规划。
+  `
+};
+
+// ============================================================================
+// Response Schema
+// ============================================================================
 
 const responseSchema = {
   type: Type.OBJECT,
   properties: {
-    detectedLanguage: { type: Type.STRING, description: "The language detected in the source text (Step 1)" },
-    globalStyleDefinition: { type: Type.STRING, description: "Global visual style definition (Step 2)" },
-    visualCoherence: { type: Type.STRING, description: "Explanation of visual coherence across slides (Step 4)" },
+    detectedLanguage: { type: Type.STRING, description: "The language detected in the source text (e.g., 'Chinese', 'English')" },
+    documentType: { type: Type.STRING, description: "Type of document" },
+    globalStyleDefinition: { type: Type.STRING, description: "Complete global visual style definition in YAML-like format" },
+    visualCoherence: { type: Type.STRING, description: "Explanation of visual coherence and slide count decision rationale" },
     slides: {
       type: Type.ARRAY,
       items: {
         type: Type.OBJECT,
         properties: {
           id: { type: Type.INTEGER },
-          title: { type: Type.STRING, description: "Functional title (e.g., Page 1 - Title)" },
-          visualPrompt: { type: Type.STRING, description: "The comprehensive image generation prompt including Visual Scene, Text Content details, Text Design, Metaphor, Mood, and Tech Specs." },
+          title: { type: Type.STRING, description: "Functional title" },
+          visualPrompt: { type: Type.STRING, description: "Complete image generation prompt in DETECTED LANGUAGE" },
           textContent: {
             type: Type.OBJECT,
             properties: {
               mainTitle: { type: Type.STRING },
               subTitle: { type: Type.STRING },
+              bodyPoints: { type: Type.ARRAY, items: { type: Type.STRING } }
             }
           },
           metaphor: { type: Type.STRING },
           mood: { type: Type.STRING },
-          explanation: { type: Type.STRING, description: "Interpretation of how the design supports the content" },
+          explanation: { type: Type.STRING, description: "Design explanation in DETECTED LANGUAGE" },
+          densityMode: { type: Type.STRING }
         },
         required: ["id", "title", "visualPrompt", "textContent", "metaphor", "mood", "explanation"]
       }
     }
   },
-  required: ["detectedLanguage", "globalStyleDefinition", "visualCoherence", "slides"]
+  required: ["detectedLanguage", "documentType", "globalStyleDefinition", "visualCoherence", "slides"]
 };
 
-// Helper to get client with correct key
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
 const getClient = (apiKey?: string) => {
-  const key = apiKey || process.env.API_KEY;
-  if (!key) {
+  if (!apiKey) {
     throw new Error("API Key is missing. Please configure it in settings.");
   }
-  return new GoogleGenAI({ apiKey: key });
+  return new GoogleGenAI({ apiKey });
 };
 
-// Helper to convert File to Base64
 const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string } }> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -109,215 +281,291 @@ const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: s
   });
 };
 
-/**
- * Helper to retry operations with exponential backoff on 503/Overloaded errors.
- */
 async function retryWithBackoff<T>(
   operation: () => Promise<T>,
-  retries = 5,
-  initialDelay = 4000
+  retries = 3,
+  initialDelay = 1500
 ): Promise<T> {
   try {
     return await operation();
   } catch (error: any) {
-    // Robustly check for 503 or specific overload messages in various error structures
-    // The SDK sometimes returns error inside an 'error' property
     const status = error?.status || error?.code || error?.error?.code || error?.error?.status;
-    const message = error?.message || error?.error?.message || '';
+    const message = error?.message || error?.error?.message || JSON.stringify(error);
     
+    // NOTE: User has confirmed they have a paid key, so we relax the "limit: 0" hard failure check.
+    // However, if we see "limit: 0", it likely still means the model isn't available for the key.
+    // We will log it but attempt a retry or let the error propagate normally.
+    if (typeof message === 'string' && (message.includes('limit: 0') || message.includes('quota exceeded'))) {
+       console.warn("Quota limit warning:", message);
+       // Throw to let the UI handle it, but don't prevent retries if it was transient (though limit:0 usually isn't)
+    }
+
+    // Check for Invalid Argument - Aspect Ratio (Don't retry if args are wrong)
+    // gemini-3-pro-image-preview SUPPORTS aspect ratio, so this error shouldn't happen unless config is malformed.
+    if (status === 400 || (typeof message === 'string' && message.includes('Aspect ratio') && !message.includes('gemini-3-pro'))) {
+       console.error("Invalid Argument configuration:", message);
+       throw error; 
+    }
+
     const isOverloaded = 
       status === 503 || 
+      status === 429 || // Too Many Requests
       status === 'UNAVAILABLE' ||
-      message.toLowerCase().includes('overloaded') ||
-      message.toLowerCase().includes('unavailable');
+      status === 'RESOURCE_EXHAUSTED' ||
+      (typeof message === 'string' && (
+        message.toLowerCase().includes('overloaded') || 
+        message.toLowerCase().includes('unavailable')
+      ));
 
     if (retries > 0 && isOverloaded) {
-      console.warn(`Model overloaded (Status: ${status}). Retrying in ${initialDelay}ms... (${retries} retries left)`);
-      await new Promise(resolve => setTimeout(resolve, initialDelay));
+      console.warn(`Model busy (Status: ${status}). Retrying in ${initialDelay}ms...`);
+      const waitTime = initialDelay + Math.random() * 500;
+      await new Promise(resolve => setTimeout(resolve, waitTime));
       return retryWithBackoff(operation, retries - 1, initialDelay * 2);
     }
     throw error;
   }
 }
 
+// ============================================================================
+// 🔍 增强版：参考模版风格分析
+// ============================================================================
+
 export const analyzeReferenceStyle = async (
   file: File, 
   apiKey?: string
 ): Promise<StyleSuggestion[]> => {
-  try {
-    const ai = getClient(apiKey);
-    const imagePart = await fileToGenerativePart(file);
+  return retryWithBackoff(async () => {
+    try {
+      const ai = getClient(apiKey);
+      const imagePart = await fileToGenerativePart(file);
 
-    const prompt = `
-    You are an expert Design Director. Analyze this image/document. It is a reference template.
-    Extract the core visual identity: Color Palette, Composition Layout, Typography Style, Lighting, and Mood.
-    
-    Based on this analysis, provide 3 distinct, high-quality image generation prompts that would recreate this exact style for a presentation slide.
-    
-    Return a JSON object with this schema:
-    {
-      "suggestions": [
-        { "id": "1", "label": "Literal Recreation", "description": "..." },
-        { "id": "2", "label": "Mood & Atmosphere", "description": "..." },
-        { "id": "3", "label": "Structural Layout", "description": "..." }
-      ]
+      const prompt = `
+Analyze this reference image style.
+Return 3 different prompt strategies (JSON).
+      `;
+
+      const response = await ai.models.generateContent({
+        model: VISION_MODEL,
+        contents: {
+          parts: [imagePart, { text: prompt }]
+        },
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+
+      const result = JSON.parse(response.text || "{}");
+      return result.suggestions || [];
+    } catch (error) {
+      console.error("Style analysis failed:", error);
+      throw error;
     }
-    `;
-
-    const response = await ai.models.generateContent({
-      model: VISION_MODEL,
-      contents: {
-        parts: [imagePart, { text: prompt }]
-      },
-      config: {
-        responseMimeType: "application/json"
-      }
-    });
-
-    const result = JSON.parse(response.text || "{}");
-    return result.suggestions || [];
-  } catch (error) {
-    console.error("Style analysis failed:", error);
-    throw error;
-  }
+  });
 };
+
+// ============================================================================
+// 🎯 核心函数：智能文本分析与 PPT 规划
+// ============================================================================
 
 export const analyzeText = async (
   text: string, 
   richness: TextRichness, 
-  apiKey?: string, 
+  apiKey: string,
   customSystemPrompt?: string,
-  forcedStyle?: string,
-  slideCount: SlideCountOption = 'auto'
+  referenceStyle?: string,
+  slideCount: SlideCountOption = 'auto',
+  visualStyle?: string
 ): Promise<PresentationAnalysis> => {
-  try {
-    const ai = getClient(apiKey);
-    
-    let richnessInstruction = "";
-    if (richness === 'concise') {
-      richnessInstruction = `
-      【Step 3 特别指令：文本密度 - 简洁模式 (Concise)】
-      - 生成的图片中的文字内容必须非常精简。
-      - Text Content 要求：主标题不超过 10 个汉字/单词；副标题仅使用极为简短的短语（不超过 15 个汉字/单词）。
-      - Text Design 要求：强调极简主义排版，大面积留白，文字作为视觉的点缀而非主体。
+  return retryWithBackoff(async () => {
+    try {
+      const ai = getClient(apiKey);
+      
+      const richnessInstruction = RICHNESS_STRATEGIES[richness]?.instruction || RICHNESS_STRATEGIES.auto.instruction;
+
+      let slideCountInstruction = "";
+      if (slideCount === 'auto') {
+        slideCountInstruction = SLIDE_COUNT_LOGIC.auto;
+      } else {
+        slideCountInstruction = SLIDE_COUNT_LOGIC.fixed(slideCount as number);
+      }
+
+      // ========== 3. 构建风格指令 ==========
+      let styleInstruction = "";
+      
+      if (referenceStyle && visualStyle && visualStyle !== 'AUTO_STYLE_DETECT') {
+        styleInstruction = `
+**【视觉风格指令 - 组合模式】**
+[参考模版]：${referenceStyle}
+[用户偏好]：${visualStyle}
+**融合策略**：以参考模版为基础，融入用户偏好。
+        `;
+      } else if (referenceStyle) {
+        styleInstruction = `
+**【视觉风格指令 - 模版参考模式】**
+${referenceStyle}
+请严格遵循此风格。
+        `;
+      } else if (visualStyle === 'AUTO_STYLE_DETECT') {
+        // ======================================================
+        // 🚀 AUTO DETECT MODE (AI Planned + Pure White)
+        // ======================================================
+        styleInstruction = `
+**【Visual Style Instruction - Pure Auto Mode (AI Self-Planned)】**
+1. **Rule**: **NO PRESETS**. Do not use any existing style presets.
+2. **Task**: You must act as a Creative Director and plan a **NEW, UNIQUE Visual Identity** derived entirely from the text's specific emotional and semantic context.
+3. **MANDATORY CONSTRAINT**: The background MUST be **Pure White (#FFFFFF)** or **Ultra Light Beige (#F8F9FA)**.
+   - **Reason**: To ensure a clean, high-end magazine aesthetic.
+   - **Strictly Forbidden**: Dark backgrounds, colorful backgrounds, complex gradients.
+4. **Goal**: Create a breathable, information-rich layout where the subject stands out clearly on white.
+        `;
+      } else if (visualStyle && STYLE_PRESETS[visualStyle as keyof typeof STYLE_PRESETS]) {
+        const preset = STYLE_PRESETS[visualStyle as keyof typeof STYLE_PRESETS];
+        styleInstruction = `
+**【视觉风格指令 - 预设模式】**
+${preset.label}
+${preset.description}
+        `;
+      } else if (visualStyle) {
+        styleInstruction = `
+**【视觉风格指令 - 自定义模式】**
+${visualStyle}
+        `;
+      } else {
+        // Fallback
+        styleInstruction = `
+**【Visual Style Instruction - Default Auto】**
+Use a clean, modern style with Pure White background.
+        `;
+      }
+
+      const basePrompt = customSystemPrompt || DEFAULT_SYSTEM_PROMPT;
+      
+      const systemInstruction = `
+${basePrompt}
+
+---
+${styleInstruction}
+---
+${slideCountInstruction}
+---
+${richnessInstruction}
+
+**Final Checklist**:
+1. **Language**: detectedLanguage must be accurate. ALL output prompts must be in this language.
+2. **Style**: If Auto, ensure background is Pure White.
       `;
-    } else {
-      richnessInstruction = `
-      【Step 3 特别指令：文本密度 - 丰富模式 (Rich)】
-      - 生成的图片中必须包含较丰富的信息量。
-      - Text Content 要求：主标题清晰明确；副标题或正文应包含具体的论述、数据或要点（30-50 个汉字/单词）。
-      - Text Design 要求：使用杂志风格或海报风格的排版，确保有足够的文本区域来容纳这些内容，同时保持美感。
-      `;
+
+      const response = await ai.models.generateContent({
+        model: ANALYSIS_MODEL,
+        contents: text,
+        config: {
+          systemInstruction: systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: responseSchema,
+        },
+      });
+
+      const jsonText = response.text;
+      if (!jsonText) throw new Error("No response from analysis model");
+      return JSON.parse(jsonText) as PresentationAnalysis;
+    } catch (error) {
+      console.error("Analysis failed:", error);
+      throw error;
     }
-
-    let slideCountInstruction = "";
-    if (slideCount === 'auto') {
-      slideCountInstruction = `**智能页数规划**：请勿局限于固定页数。根据文档内容的丰富程度、逻辑段落和叙事节奏，智能决定幻灯片的页数（通常在 5 到 15 页之间）。长文多页，短文少页，确保信息传达完整。`;
-    } else {
-      slideCountInstruction = `**固定页数要求**：请严格按照 **${slideCount} 页** 的数量进行规划和生成。`;
-    }
-
-    let basePrompt = customSystemPrompt || DEFAULT_SYSTEM_PROMPT;
-    
-    // Replace the default page count instruction with our specific one
-    basePrompt = basePrompt.replace(
-      /\*\*智能页数规划\*\*：.*?(?=\n)/s, 
-      slideCountInstruction
-    );
-    
-    // Inject forced style if present
-    if (forcedStyle) {
-      basePrompt = basePrompt.replace(
-        /用户希望模仿 【.*?】。/, 
-        `用户提供了具体的参考模版。
-        【CRITICAL: STRICT VISUAL COMPLIANCE】
-        全局视觉风格必须严格强制执行以下描述：
-        "${forcedStyle}"
-        忽略任何与此参考风格冲突的默认设置。所有生成的提示词必须基于此视觉核心。`
-      );
-    }
-
-    const systemInstruction = `${basePrompt}\n\n${richnessInstruction}`;
-
-    const response = await ai.models.generateContent({
-      model: ANALYSIS_MODEL,
-      contents: text,
-      config: {
-        systemInstruction: systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: responseSchema,
-      },
-    });
-
-    const jsonText = response.text;
-    if (!jsonText) throw new Error("No response from analysis model");
-    return JSON.parse(jsonText) as PresentationAnalysis;
-  } catch (error) {
-    console.error("Analysis failed:", error);
-    throw error;
-  }
+  });
 };
+
+// ============================================================================
+// 🖼️ 幻灯片图像生成
+// ============================================================================
 
 export const generateSlideImage = async (
   prompt: string, 
   apiKey?: string, 
   globalStyle?: string,
-  referenceImage?: string // Data URL string
+  referenceImage?: string,
+  detectedLanguage?: string
 ): Promise<string> => {
   const ai = getClient(apiKey);
-  const styleContext = globalStyle ? `Style Context: ${globalStyle}. ` : "";
-  let enhancedPrompt = `High quality, editorial design, text-integrated image. ${styleContext}${prompt}`;
+  
+  // 1. 动态构建高质量 Prompt
+  const langInstruction = detectedLanguage 
+    ? `Language Requirement: Text shown in the image MUST be in ${detectedLanguage}.` 
+    : ``;
+
+  let enhancedPrompt = `
+[Task]
+Generate a high-quality, high-resolution presentation slide background (16:9).
+
+[Style Context]
+${globalStyle || 'Professional, Clean, Modern'}
+
+[Scene Description]
+${prompt}
+
+[Quality & Technical Requirements]
+- **Resolution**: High Resolution, Extremely Detailed, Photorealistic or High-End Graphic Design.
+- **Lighting**: Cinematic lighting, studio quality.
+- **Composition**: Balanced for a presentation slide (leave some space for potential overlay).
+- **Format**: 16:9 Aspect Ratio.
+- ${langInstruction}
+    `.trim();
   
   const contentsParts: any[] = [];
 
+  // 2. 处理参考图 (Image-to-Image)
   if (referenceImage) {
-    // Parse Data URL to extract base64 and mime
     const matches = referenceImage.match(/^data:(.+);base64,(.+)$/);
     if (matches) {
       const mimeType = matches[1];
       const data = matches[2];
       
-      // Add reference image to parts
       contentsParts.push({
         inlineData: { mimeType, data }
       });
 
-      // Update prompt to force using the reference
-      enhancedPrompt = `[STRICT TEMPLATE REFERENCE] 
-      Use the provided image as a Reference Template for layout, typography, and color palette.
-      Generate a NEW image that matches this visual style EXACTLY (High Fidelity), but with the following new content:
-      
-      ${enhancedPrompt}`;
+      enhancedPrompt = `
+[Image-to-Image Directive]
+Use the provided image as a strict Style Reference (Color, Layout, Mood).
+Generate a NEW image based on this reference but with the following content:
+
+${enhancedPrompt}
+      `.trim();
     }
   }
 
-  // Add the text prompt part
   contentsParts.push({ text: enhancedPrompt });
 
   return retryWithBackoff(async () => {
     try {
+      // Use standard generateContent for Gemini 3 Pro Image Preview
+      // It supports imageConfig with aspectRatio and imageSize.
       const response = await ai.models.generateContent({
         model: IMAGE_MODEL,
         contents: { parts: contentsParts },
         config: {
           imageConfig: {
             aspectRatio: "16:9",
-            imageSize: "2K"
+            imageSize: "2K" // Requesting high quality
           }
         }
       });
 
-      if (response.candidates?.[0]?.content?.parts) {
+      // 3. 解析 Base64 图片数据
+      if (response.candidates && response.candidates.length > 0) {
         for (const part of response.candidates[0].content.parts) {
           if (part.inlineData && part.inlineData.data) {
-             return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+            const mimeType = part.inlineData.mimeType || 'image/png';
+            return `data:${mimeType};base64,${part.inlineData.data}`;
           }
         }
       }
+      
       throw new Error("No image data found in response");
     } catch (error) {
       console.error("Internal generation attempt failed", error);
       throw error;
     }
-  });
+  }, 3, 2000); 
 };

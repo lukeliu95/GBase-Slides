@@ -1,20 +1,92 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# GBase Slides - AI 智能视觉叙事幻灯片生成器
 
-# Run and deploy your AI Studio app
+GBase Slides 是一个智能化的 Web 应用程序，致力于将文本文档（文章、笔记、报告）转化为具有高度视觉美感和叙事深度的 PPT 演示文稿。
 
-This contains everything you need to run your app locally.
+它不仅仅是简单的“文生图”，而是通过深度的语义分析和多模态 AI 能力，模仿高端杂志的排版风格，通过隐喻和光影来传达情感，实现真正的“图文一体化”视觉叙事。
 
-View your app in AI Studio: https://ai.studio/apps/drive/1Eu5YLwb9oLbCUnsxRWHGGBB5tblFxJhc
+## 🚀 核心功能
 
-## Run Locally
+*   **智能文本分析与叙事构建**：
+    *   自动识别源文档语言。
+    *   提取核心观点，构建贯穿始终的视觉隐喻系统。
+    *   **智能页数规划**：支持 AI 自动决定页数（5-15页）或用户手动指定（如 5页、10页等）。
+*   **多模态风格迁移（参考模版）**：
+    *   支持用户上传图片或 PDF 页面作为“参考模版”。
+    *   **视觉风格提取**：AI 自动分析参考图的配色、构图、字体和光影。
+    *   **高保真图生图**：将参考图作为视觉锚点（Image-to-Image），强制后续生成的每一张幻灯片都严格遵循该模版的设计风格。
+*   **内容密度控制 (Content Density)**：
+    *   提供 **Auto (自动)**、**Concise (简洁)**、**Rich (丰富)** 三种模式。
+    *   AI 可根据内容类型（如感性叙事 vs 数据报告）自动调整每一页的文字量和排版布局。
+*   **视觉一致性系统**：
+    *   采用“首图锚定”策略：如果没有上传模版，系统会以第一张生成的幻灯片作为后续页面的参考输入，确保整套 PPT 风格高度统一。
+*   **PDF 导出**：
+    *   支持将生成的幻灯片一键导出为高清 PDF 文档（16:9 宽屏）。
+*   **自定义视觉风格**：
+    *   内置多种预设风格（如 The Notebook、赛博朋克、瑞士极简）。
+    *   支持用户保存自定义的风格提示词到本地。
 
-**Prerequisites:**  Node.js
+## 🛠️ 技术架构
 
+本项目是一个基于 React 19 的现代单页应用 (SPA)，主要技术栈如下：
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### 核心栈
+*   **前端框架**: React 19
+*   **样式库**: Tailwind CSS (配合优雅的自定义滚动条与动画)
+*   **图标库**: Lucide React
+*   **PDF 生成**: jsPDF
+*   **AI SDK**: `@google/genai` (Google Gemini API)
+
+### AI 处理管线 (Pipeline)
+
+应用程序采用多阶段 AI 处理流程：
+
+1.  **语义分析阶段 (Gemini 1.5 Pro)**:
+    *   读取用户文本。
+    *   根据设定（页数、丰富度、风格）生成 JSON 结构的幻灯片规划。
+    *   输出包含：视觉隐喻 (Metaphor)、详细画面描述 (Visual Prompt)、页面文案 (Text Content) 和设计解读。
+
+2.  **视觉风格分析阶段 (Gemini 2.5 Flash)**:
+    *   (当用户上传参考图时触发) 快速分析图像的视觉特征，生成风格描述提示词。
+
+3.  **图像生成阶段 (Imagen 3 / Gemini 3 Pro Image)**:
+    *   **混合输入 (Multimodal Generation)**：将“文本提示词”与“参考图片数据 (Base64)”同时发送给模型。
+    *   **风格锁定**：利用模型的 Image-to-Image 能力，实现对参考模版的高度还原（布局、字体风格、色调）。
+    *   **序列化生成**：为了避免 API 速率限制 (Rate Limiting) 并确保引用逻辑正确，图片是逐张顺序生成的。
+
+## 📖 使用指南
+
+### 1. 配置 API Key
+首次使用需要配置 Google Gemini API Key。
+1.  点击右上角的 **设置 (Settings)** 图标。
+2.  输入您的 API Key（可从 [Google AI Studio](https://aistudio.google.com/) 获取）。
+3.  (可选) 您可以在此处修改系统提示词 (System Prompt) 以调整 AI 的默认人设。
+
+### 2. 创建演示文稿
+1.  **输入内容**：在主输入框中粘贴您的文章、笔记或大纲。
+2.  **选择风格 (调色盘图标)**：
+    *   选择预设风格（如 "Swiss Minimalist"）。
+    *   或切换到 "My Styles" 添加并保存您自己的风格描述。
+3.  **上传参考模版 (回形针图标)**：
+    *   (强烈推荐) 上传一张您喜欢的 PPT 截图或设计图。AI 将会“复刻”这张图的风格来制作您的 PPT。
+4.  **调整设置 (滑块图标)**：
+    *   **Content Density (内容密度)**：推荐选择 "Auto" 让 AI 自动判断，或根据需要选择 "Concise" (少字) / "Rich" (多字)。
+    *   **Slide Count (页数)**：选择 "Auto" 或指定具体页数。
+5.  **生成**：点击 "Generate" 按钮。
+
+### 3. 预览与导出
+*   **双栏视图**：左侧显示叙事结构和设计解读，右侧显示生成的高清幻灯片。
+*   **全屏演示**：点击幻灯片右上角的放大图标进行全屏播放。
+*   **导出 PDF**：点击右上角的 "Export PDF" 按钮下载文件。
+
+## 💡 技术亮点与鲁棒性设计
+
+*   **指数退避重试 (Exponential Backoff)**：
+    *   针对 AI 模型可能出现的 `503 Service Unavailable` 或 `Overloaded` 错误，系统内置了智能重试机制。
+    *   会自动等待并增加重试间隔（4s -> 8s -> 16s...），极大提高了生成成功率。
+*   **优雅的 UI/UX**：
+    *   **响应式布局**：自适应的左右分栏设计，配合自定义样式的细滚动条。
+    *   **状态反馈**：清晰的加载动画、生成进度条和错误提示。
+    *   **本地持久化**：用户的 API Key、自定义风格和系统设置均保存在本地浏览器中，无需重复配置。
+
+## 许可证
+MIT License

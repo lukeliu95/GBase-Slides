@@ -1,4 +1,6 @@
-export type TextRichness = 'concise' | 'rich';
+
+
+export type TextRichness = 'auto' | 'concise' | 'rich';
 
 export type SlideCountOption = 'auto' | 2 | 5 | 8 | 10 | 12 | 15;
 
@@ -28,6 +30,19 @@ export interface StyleSuggestion {
   id: string;
   label: string; // e.g., "Minimalist", "Structural"
   description: string; // The actual prompt derived from the image
+}
+
+export interface VisualStylePreset {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface UserStyle {
+  id: string;
+  label: string;
+  description: string;
+  createdAt: number;
 }
 
 export interface AppSettings {

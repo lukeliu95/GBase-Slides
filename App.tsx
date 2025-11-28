@@ -5,7 +5,7 @@ import InputSection from './components/InputSection';
 import ProcessingState from './components/ProcessingState';
 import SlideViewer from './components/SlideViewer';
 import SettingsModal from './components/SettingsModal';
-import { Sparkles, Settings as SettingsIcon } from 'lucide-react';
+import { Sparkles, Settings as SettingsIcon, Banana } from 'lucide-react';
 
 function App() {
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
@@ -51,10 +51,11 @@ function App() {
 
   // Handle Reference Style Analysis
   const handleAnalyzeReference = async (file: File) => {
-     if (!settings.apiKey && !process.env.API_KEY) {
+     // STRICT CHECK: Must have settings.apiKey
+     if (!settings.apiKey) {
       setErrorMsg("Please configure your Gemini API Key in settings.");
       setIsSettingsOpen(true);
-      throw new Error("No API Key");
+      throw new Error("No API Key configured");
     }
 
     setAppState(AppState.ANALYZING_STYLE);
@@ -70,14 +71,14 @@ function App() {
     } catch (e) {
       console.error(e);
       setAppState(AppState.IDLE);
-      setErrorMsg("Failed to analyze visual style. Please try another image.");
+      setErrorMsg("Failed to analyze visual style. Please check API Key or try another image.");
       throw e;
     }
   };
 
-  const handleAnalyze = async (text: string, richness: TextRichness, slideCount: SlideCountOption, referenceStyle?: string) => {
-    // Validate API Key before starting if it's not set in env (which we assume isn't for this feature)
-    if (!settings.apiKey && !process.env.API_KEY) {
+  const handleAnalyze = async (text: string, richness: TextRichness, slideCount: SlideCountOption, referenceStyle?: string, visualStyle?: string) => {
+    // STRICT CHECK: Must have settings.apiKey
+    if (!settings.apiKey) {
       setErrorMsg("Please configure your Gemini API Key in settings.");
       setIsSettingsOpen(true);
       return;
@@ -92,24 +93,30 @@ function App() {
         richness, 
         settings.apiKey, 
         settings.systemPrompt,
-        referenceStyle,
-        slideCount
+        referenceStyle, // This is if they selected a suggestion from upload
+        slideCount,
+        visualStyle // This is the generic or custom style text from the new UI
       );
       setAnalysis(result);
       setSlides(result.slides);
       setAppState(AppState.GENERATING_IMAGES);
 
       // 2. Start generating images. 
-      generateImagesForSlides(result.slides, result.globalStyleDefinition);
+      generateImagesForSlides(result.slides, result.globalStyleDefinition, result.detectedLanguage);
 
     } catch (err: any) {
-      console.error(err);
-      setErrorMsg("We encountered an issue analyzing your text. Please check your API Key and try again.");
+      console.error("App Error:", err);
+      let msg = "We encountered an issue analyzing your text. Please check your API Key and try again.";
+      // specific handling for Quota limits
+      if (err.message && (err.message.includes('Quota') || err.message.includes('429') || err.message.includes('limit: 0'))) {
+          msg = "Quota exceeded (429). Your API key has hit the rate limit or does not have access to this model.";
+      }
+      setErrorMsg(msg);
       setAppState(AppState.ERROR);
     }
   };
 
-  const generateImagesForSlides = async (slideList: SlideContent[], globalStyle: string) => {
+  const generateImagesForSlides = async (slideList: SlideContent[], globalStyle: string, detectedLanguage: string) => {
     let firstSlideImage: string | undefined = undefined;
 
     // Execute sequentially to prevent rate limiting / overloading
@@ -131,7 +138,8 @@ function App() {
           slide.visualPrompt, 
           settings.apiKey, 
           globalStyle,
-          referenceToUse
+          referenceToUse,
+          detectedLanguage
         );
 
         // Store the first image to use as fallback template for others if no user template was uploaded
@@ -169,8 +177,9 @@ function App() {
                 isAnalyzingRef={appState === AppState.ANALYZING_STYLE}
             />
             {errorMsg && (
-              <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-red-50 text-red-600 px-4 py-2 rounded-lg border border-red-100 text-sm animate-fade-in flex items-center gap-2 shadow-md z-50">
+              <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-red-50 text-red-600 px-4 py-3 rounded-xl border border-red-100 text-sm animate-fade-in flex items-center gap-3 shadow-xl z-50 max-w-md text-center">
                 <span>{errorMsg}</span>
+                <button onClick={() => setErrorMsg(null)} className="p-1 hover:bg-red-100 rounded-full"><SettingsIcon className="w-3 h-3" /></button>
               </div>
             )}
           </div>
@@ -198,7 +207,7 @@ function App() {
       {/* Top Navigation Bar */}
       <header className="flex-none w-full px-8 py-4 flex items-center justify-between border-b border-notebook-accent/50 bg-white/70 backdrop-blur-sm z-10">
         <div 
-          className="flex items-center gap-3 cursor-pointer group" 
+          className="flex items-center gap-4 cursor-pointer group" 
           onClick={() => {
             if (appState !== AppState.ANALYZING_TEXT) {
                 setAppState(AppState.IDLE);
@@ -208,10 +217,19 @@ function App() {
             }
           }}
         >
-          <div className="w-8 h-8 bg-neutral-900 rounded-lg flex items-center justify-center text-white shadow-sm transition-transform group-hover:scale-105">
-            <span className="font-serif font-bold text-lg italic">S</span>
+          <img 
+            src="https://gbase.ai/title-logo.png" 
+            alt="GBase" 
+            className="h-8 w-auto object-contain transition-transform group-hover:scale-105" 
+          />
+          
+          <div className="flex items-center gap-3">
+             <span className="font-serif font-bold text-xl text-neutral-800 tracking-tight">PPT</span>
+             <div className="flex items-center gap-1.5 bg-yellow-50 px-3 py-1.5 rounded-full border border-yellow-200/60 shadow-sm ml-2">
+                <Banana className="w-4 h-4 text-yellow-500 fill-yellow-400" />
+                <span className="text-[10px] font-bold text-yellow-700 font-mono tracking-wide uppercase">Nano Banana Pro</span>
+             </div>
           </div>
-          <span className="font-medium text-neutral-800 tracking-tight">GBase Slides</span>
         </div>
         
         <div className="flex items-center gap-4">
@@ -228,8 +246,8 @@ function App() {
            
            <button 
              onClick={() => setIsSettingsOpen(true)}
-             className="p-2 rounded-full hover:bg-neutral-100 text-notebook-secondary hover:text-notebook-text transition-colors"
-             title="Settings"
+             className={`p-2 rounded-full hover:bg-neutral-100 transition-colors ${!settings.apiKey ? 'text-red-500 animate-pulse' : 'text-notebook-secondary hover:text-notebook-text'}`}
+             title={!settings.apiKey ? "Configure API Key" : "Settings"}
            >
              <SettingsIcon className="w-5 h-5" />
            </button>

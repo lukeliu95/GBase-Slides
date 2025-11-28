@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { SlideContent } from '../types';
-import { Download, ChevronLeft, ChevronRight, Info, Sparkles, Layout, Maximize2, Minimize2, Loader2, Quote, Palette } from 'lucide-react';
+import { Download, ChevronLeft, ChevronRight, Play, X, Loader2, Terminal, Maximize2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
 interface SlideViewerProps {
@@ -23,19 +23,23 @@ const SlideViewer: React.FC<SlideViewerProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const toggleFullscreen = () => {
-    if (!slideContainerRef.current) return;
+  const enterFullscreen = () => {
+    if (slideContainerRef.current) {
+        slideContainerRef.current.requestFullscreen().catch((err) => {
+            console.error(`Error attempting to enable fullscreen: ${err.message}`);
+        });
+    }
+  };
 
+  const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      slideContainerRef.current.requestFullscreen().catch((err) => {
-        console.error(`Error attempting to enable fullscreen: ${err.message}`);
-      });
+      enterFullscreen();
     } else {
       document.exitFullscreen();
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
@@ -43,6 +47,23 @@ const SlideViewer: React.FC<SlideViewerProps> = ({
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
+
+  // Keyboard Navigation for Fullscreen/Presentation Mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Allow arrow navigation if fullscreen
+      if (isFullscreen) {
+        if (e.key === 'ArrowRight' || e.key === 'Space') {
+          if (currentSlideIndex < slides.length - 1) setCurrentSlideIndex(currentSlideIndex + 1);
+        } else if (e.key === 'ArrowLeft') {
+          if (currentSlideIndex > 0) setCurrentSlideIndex(currentSlideIndex - 1);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen, currentSlideIndex, slides.length, setCurrentSlideIndex]);
 
   const handleNext = () => {
     if (currentSlideIndex < slides.length - 1) setCurrentSlideIndex(currentSlideIndex + 1);
@@ -97,7 +118,7 @@ const SlideViewer: React.FC<SlideViewerProps> = ({
     <div className="flex flex-col lg:flex-row h-full w-full max-w-[1600px] mx-auto p-4 md:p-8 animate-fade-in gap-8 overflow-hidden">
       
       {/* LEFT PANEL: Narrative & Info Dashboard */}
-      <div className="w-full lg:w-[420px] flex flex-col gap-6 overflow-y-auto custom-scrollbar pr-2 lg:border-r border-transparent lg:border-notebook-accent/50">
+      <div className="w-full lg:w-[320px] flex flex-col gap-6 overflow-y-auto custom-scrollbar pr-2 lg:border-r border-transparent lg:border-notebook-accent/50">
         
         {/* Title Section */}
         <div className="space-y-4 pt-2">
@@ -108,75 +129,27 @@ const SlideViewer: React.FC<SlideViewerProps> = ({
                 <div className="h-px bg-notebook-accent flex-1"></div>
             </div>
             
-            <h1 className="text-3xl md:text-4xl font-serif text-notebook-text leading-tight">
+            <h1 className="text-2xl md:text-3xl font-serif text-notebook-text leading-tight">
                 {currentSlide.textContent.mainTitle}
             </h1>
-            <p className="text-lg text-notebook-secondary leading-relaxed font-light">
+            <p className="text-sm md:text-base text-notebook-secondary leading-relaxed font-light">
                 {currentSlide.textContent.subTitle}
             </p>
         </div>
 
-        {/* Design Insights Card */}
-        <div className="bg-white rounded-xl border border-notebook-accent shadow-sm p-6 space-y-5 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                <Sparkles className="w-24 h-24 text-indigo-500" />
-            </div>
-
-            <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-4 h-4 text-indigo-500" />
-                <h3 className="text-xs font-bold tracking-[0.2em] uppercase text-notebook-text">Design Intelligence</h3>
-            </div>
-
-            <div className="space-y-4 relative z-10">
-                <div>
-                    <span className="text-[10px] uppercase text-notebook-secondary/70 font-bold tracking-wider block mb-1">Visual Metaphor</span>
-                    <p className="text-sm font-medium text-notebook-text leading-relaxed">{currentSlide.metaphor}</p>
-                </div>
-                
-                <div>
-                    <span className="text-[10px] uppercase text-notebook-secondary/70 font-bold tracking-wider block mb-1">Mood</span>
-                    <div className="flex flex-wrap gap-2">
-                        {currentSlide.mood.split(/[,\s]+/).filter(Boolean).map((m, i) => (
-                            <span key={i} className="px-2 py-1 bg-indigo-50 text-indigo-700 text-xs rounded-md font-medium">
-                                {m}
-                            </span>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="pt-2 border-t border-notebook-accent/50">
-                     <span className="text-[10px] uppercase text-notebook-secondary/70 font-bold tracking-wider block mb-2">Director's Note</span>
-                     <div className="flex gap-3">
-                        <Quote className="w-4 h-4 text-notebook-accent flex-shrink-0 fill-notebook-accent" />
-                        <p className="text-sm text-notebook-secondary italic leading-relaxed">
-                            {currentSlide.explanation}
-                        </p>
-                     </div>
+        {/* Prompt Card - Simplified View */}
+        <div className="bg-white rounded-xl border border-notebook-accent shadow-sm p-4 space-y-3 group hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between border-b border-notebook-accent/50 pb-2">
+                <div className="flex items-center gap-2">
+                    <Terminal className="w-3.5 h-3.5 text-notebook-secondary" />
+                    <h3 className="text-[10px] font-bold tracking-[0.2em] uppercase text-notebook-text">Final Visual Prompt</h3>
                 </div>
             </div>
-        </div>
-
-        {/* Global Context Card */}
-        <div className="bg-neutral-50 rounded-xl border border-notebook-accent/50 p-5 space-y-4">
-            <div className="flex items-center gap-2">
-                <Palette className="w-4 h-4 text-notebook-secondary" />
-                <h3 className="text-xs font-bold tracking-[0.2em] uppercase text-notebook-secondary">Global Style</h3>
+            <div className="relative">
+                <p className="text-[10px] text-notebook-secondary font-mono leading-relaxed opacity-80 group-hover:opacity-100 transition-opacity whitespace-pre-wrap break-words">
+                    {currentSlide.visualPrompt}
+                </p>
             </div>
-            <p className="text-xs text-notebook-secondary leading-relaxed border-l-2 border-notebook-accent pl-3">
-                {globalStyle}
-            </p>
-            
-            {visualCoherence && (
-                <div className="pt-3 border-t border-notebook-accent/50">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Layout className="w-3 h-3 text-emerald-600" />
-                        <span className="text-[10px] font-bold tracking-wider uppercase text-emerald-700">Coherence Strategy</span>
-                    </div>
-                    <p className="text-xs text-emerald-800/80 leading-relaxed italic">
-                        {visualCoherence}
-                    </p>
-                </div>
-            )}
         </div>
 
       </div>
@@ -187,33 +160,37 @@ const SlideViewer: React.FC<SlideViewerProps> = ({
         {/* Main Stage Container */}
         <div className="flex-1 bg-neutral-100/50 rounded-2xl border border-notebook-accent/50 p-4 md:p-8 flex flex-col relative overflow-hidden group-stage">
             
-            {/* Toolbar - Always visible */}
-            <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
-                <button 
-                    onClick={handleDownloadPDF}
-                    disabled={isDownloading || isAnySlideGenerating}
-                    title={isAnySlideGenerating ? "Waiting for generation to finish..." : "Download Presentation as PDF"}
-                    className="flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur rounded-full shadow-sm border border-notebook-accent text-sm font-medium hover:bg-white hover:text-indigo-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                    {isDownloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                    <span>Export PDF</span>
-                </button>
-                <button 
-                    onClick={toggleFullscreen}
-                    title="Toggle Fullscreen"
-                    className="p-2 bg-white/90 backdrop-blur rounded-full shadow-sm border border-notebook-accent hover:bg-white hover:text-indigo-600 transition-colors"
-                >
-                    {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                </button>
-            </div>
+            {/* Toolbar - Top Right */}
+            {!isFullscreen && (
+                <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+                    <button 
+                        onClick={handleDownloadPDF}
+                        disabled={isDownloading || isAnySlideGenerating}
+                        title={isAnySlideGenerating ? "Waiting for generation to finish..." : "Download Presentation as PDF"}
+                        className="flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur rounded-full shadow-sm border border-notebook-accent text-sm font-medium hover:bg-white hover:text-indigo-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isDownloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                        <span>PDF</span>
+                    </button>
+
+                    <button 
+                        onClick={enterFullscreen}
+                        className="flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur rounded-full shadow-sm border border-notebook-accent text-sm font-medium hover:bg-indigo-50 hover:text-indigo-600 transition-all hover:scale-105"
+                        title="Start Presentation (Fullscreen)"
+                    >
+                        <Play className="w-4 h-4 fill-current" />
+                        <span>Play</span>
+                    </button>
+                </div>
+            )}
 
             {/* Image Preview Area */}
-            <div className="flex-1 flex items-center justify-center w-full min-h-0">
+            <div className="flex-1 flex items-center justify-center w-full min-h-0 relative">
                 <div 
                     ref={slideContainerRef}
                     className={`relative shadow-2xl shadow-neutral-200/50 bg-white transition-all duration-500 ${
                         isFullscreen 
-                        ? 'w-full h-full fixed inset-0 z-50 rounded-none' 
+                        ? 'w-full h-full fixed inset-0 z-50 rounded-none bg-black flex items-center justify-center' 
                         : 'aspect-[16/9] w-full max-h-full rounded-lg overflow-hidden ring-1 ring-notebook-accent'
                     }`}
                 >
@@ -221,7 +198,7 @@ const SlideViewer: React.FC<SlideViewerProps> = ({
                         <img 
                             src={currentSlide.imageUrl} 
                             alt={currentSlide.textContent.mainTitle}
-                            className="w-full h-full object-cover"
+                            className={`object-contain ${isFullscreen ? 'w-full h-full' : 'w-full h-full'}`}
                         />
                     ) : (
                         <div className="w-full h-full bg-white flex flex-col items-center justify-center gap-4">
@@ -231,37 +208,48 @@ const SlideViewer: React.FC<SlideViewerProps> = ({
                                     <p className="font-serif italic text-indigo-400 animate-pulse">Rendering visual...</p>
                                 </>
                             ) : (
-                                <div className="text-notebook-accent">
+                                <div className="text-notebook-accent text-center px-4">
                                     <div className="w-16 h-16 rounded-full bg-notebook-bg animate-pulse mx-auto mb-4" />
-                                    <p className="font-serif italic">Waiting for generation queue...</p>
+                                    <p className="font-serif italic mb-2">Image generation failed or pending</p>
                                 </div>
                             )}
                         </div>
                     )}
 
-                    {/* On-Image Navigation (Visible on hover) */}
+                    {/* Navigation Buttons (HIDDEN in Fullscreen per user request to "remove extra buttons") */}
                     {!isFullscreen && (
                         <>
                             <button 
                                 onClick={(e) => { e.stopPropagation(); handlePrev(); }}
                                 disabled={currentSlideIndex === 0}
-                                className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-white/80 backdrop-blur-md rounded-full shadow-lg opacity-0 hover:opacity-100 disabled:hidden transition-all hover:scale-105 z-10"
+                                className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-white/80 backdrop-blur-md rounded-full shadow-lg transition-all hover:scale-105 z-10 opacity-0 hover:opacity-100 disabled:opacity-0"
                             >
                                 <ChevronLeft className="w-5 h-5" />
                             </button>
                             <button 
                                 onClick={(e) => { e.stopPropagation(); handleNext(); }}
                                 disabled={currentSlideIndex === slides.length - 1}
-                                className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white/80 backdrop-blur-md rounded-full shadow-lg opacity-0 hover:opacity-100 disabled:hidden transition-all hover:scale-105 z-10"
+                                className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white/80 backdrop-blur-md rounded-full shadow-lg transition-all hover:scale-105 z-10 opacity-0 hover:opacity-100 disabled:opacity-0"
                             >
                                 <ChevronRight className="w-5 h-5" />
                             </button>
                         </>
                     )}
+
+                    {/* Fullscreen Close Button - Only visible in fullscreen (Safety UI) */}
+                    {isFullscreen && (
+                        <button 
+                            onClick={toggleFullscreen}
+                            className="absolute top-6 right-6 p-2 bg-white/10 backdrop-blur hover:bg-white/20 text-white rounded-full transition-colors z-50 group"
+                            title="Exit Fullscreen"
+                        >
+                            <X className="w-6 h-6 opacity-50 group-hover:opacity-100" />
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {/* Bottom Thumbnails Strip (Inside the visual stage for proximity) */}
+            {/* Bottom Thumbnails Strip */}
             <div className="mt-6 h-16 w-full flex justify-center">
                  <div className="flex gap-2 overflow-x-auto no-scrollbar max-w-full px-4 py-1">
                     {slides.map((slide, idx) => (
@@ -278,7 +266,7 @@ const SlideViewer: React.FC<SlideViewerProps> = ({
                                 <img src={slide.imageUrl} alt="" className="w-full h-full object-cover" />
                             ) : (
                                 <div className="w-full h-full bg-notebook-bg flex items-center justify-center">
-                                    <div className={`w-2 h-2 rounded-full ${slide.isGenerating ? 'bg-indigo-400 animate-bounce' : 'bg-notebook-accent'}`} />
+                                    <div className={`w-2 h-2 rounded-full ${slide.isGenerating ? 'bg-indigo-400 animate-bounce' : 'bg-red-300'}`} />
                                 </div>
                             )}
                         </button>
