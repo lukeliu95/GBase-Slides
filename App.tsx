@@ -109,7 +109,7 @@ function App() {
       let msg = "We encountered an issue analyzing your text. Please check your API Key and try again.";
       // specific handling for Quota limits
       if (err.message && (err.message.includes('Quota') || err.message.includes('429') || err.message.includes('limit: 0'))) {
-          msg = "Quota exceeded (429). Your API key has hit the rate limit or does not have access to this model.";
+          msg = "Error (429): Quota Exceeded. Your API Key does not have access to this model or has hit a rate limit.";
       }
       setErrorMsg(msg);
       setAppState(AppState.ERROR);
@@ -150,17 +150,68 @@ function App() {
         setSlides(prevSlides => 
           prevSlides.map(s => s.id === slide.id ? { ...s, imageUrl, isGenerating: false } : s)
         );
-      } catch (e) {
+      } catch (e: any) {
         console.error(`Failed to generate image for slide ${slide.id}`, e);
+        
+        let customError = "";
+        if (e.message?.includes('limit: 0')) {
+             customError = " (Quota Limit Reached)";
+             // If we hit a hard limit, we might want to stop the loop or alert the user
+             setErrorMsg("Generation stopped: Your API key does not have access to 'gemini-3-pro-image-preview'. Please check your Google AI Studio plan.");
+        }
+
         // Turn off generating flag for this slide on error
         setSlides(prevSlides => 
-            prevSlides.map(s => s.id === slide.id ? { ...s, isGenerating: false } : s)
+            prevSlides.map(s => s.id === slide.id ? { ...s, isGenerating: false, explanation: s.explanation + customError } : s)
           );
       }
     }
     
     // Once the loop is done (all success or fail), mark complete
     setAppState(AppState.COMPLETE);
+  };
+
+  const handleRegenerateSlide = async (index: number) => {
+    if (!settings.apiKey || !analysis) return;
+
+    const slide = slides[index];
+    // 1. Set Generating State
+    setSlides(prev => prev.map((s, i) => i === index ? { ...s, isGenerating: true } : s));
+
+    try {
+      // 2. Determine Reference Logic (Same as initial generation)
+      let referenceToUse: string | undefined = undefined;
+      
+      // If user uploaded a template, always use it
+      if (referenceImageBase64) {
+        referenceToUse = referenceImageBase64;
+      } 
+      // If no upload, and we are not on the first slide, try to use the first slide as reference
+      else if (index > 0 && slides[0].imageUrl) {
+        referenceToUse = slides[0].imageUrl;
+      }
+
+      // 3. Call API
+      const imageUrl = await generateSlideImage(
+        slide.visualPrompt,
+        settings.apiKey,
+        analysis.globalStyleDefinition,
+        referenceToUse,
+        analysis.detectedLanguage
+      );
+
+      // 4. Update Result
+      setSlides(prev => prev.map((s, i) => i === index ? { ...s, imageUrl, isGenerating: false } : s));
+
+    } catch (error: any) {
+      console.error("Regeneration failed", error);
+      let msg = "Failed to regenerate slide image.";
+      if (error.message?.includes('limit: 0')) {
+          msg = "Failed: Quota Limit (429).";
+      }
+      setErrorMsg(msg);
+      setSlides(prev => prev.map((s, i) => i === index ? { ...s, isGenerating: false } : s));
+    }
   };
 
   const renderContent = () => {
@@ -177,9 +228,9 @@ function App() {
                 isAnalyzingRef={appState === AppState.ANALYZING_STYLE}
             />
             {errorMsg && (
-              <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-red-50 text-red-600 px-4 py-3 rounded-xl border border-red-100 text-sm animate-fade-in flex items-center gap-3 shadow-xl z-50 max-w-md text-center">
-                <span>{errorMsg}</span>
-                <button onClick={() => setErrorMsg(null)} className="p-1 hover:bg-red-100 rounded-full"><SettingsIcon className="w-3 h-3" /></button>
+              <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-red-50 text-red-600 px-6 py-4 rounded-xl border border-red-200 shadow-2xl z-50 max-w-lg text-center flex flex-col gap-2 animate-fade-in">
+                <span className="font-semibold text-sm">{errorMsg}</span>
+                <button onClick={() => setErrorMsg(null)} className="text-xs underline opacity-80 hover:opacity-100">Dismiss</button>
               </div>
             )}
           </div>
@@ -195,6 +246,7 @@ function App() {
             setCurrentSlideIndex={setCurrentSlideIndex}
             globalStyle={analysis?.globalStyleDefinition || "Elegant, Minimalist, Narrative-driven."}
             visualCoherence={analysis?.visualCoherence}
+            onRegenerateSlide={handleRegenerateSlide}
           />
         );
       default:

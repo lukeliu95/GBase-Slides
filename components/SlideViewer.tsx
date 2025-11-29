@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { SlideContent } from '../types';
-import { Download, ChevronLeft, ChevronRight, Play, X, Loader2, Terminal, Maximize2 } from 'lucide-react';
+import { Download, ChevronLeft, ChevronRight, Play, X, Loader2, Terminal, Maximize2, RotateCcw } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
 interface SlideViewerProps {
@@ -9,6 +9,7 @@ interface SlideViewerProps {
   setCurrentSlideIndex: (index: number) => void;
   globalStyle: string;
   visualCoherence?: string;
+  onRegenerateSlide: (index: number) => void;
 }
 
 const SlideViewer: React.FC<SlideViewerProps> = ({ 
@@ -16,7 +17,8 @@ const SlideViewer: React.FC<SlideViewerProps> = ({
   currentSlideIndex, 
   setCurrentSlideIndex,
   globalStyle,
-  visualCoherence
+  visualCoherence,
+  onRegenerateSlide
 }) => {
   const currentSlide = slides[currentSlideIndex];
   const slideContainerRef = useRef<HTMLDivElement>(null);
@@ -113,6 +115,7 @@ const SlideViewer: React.FC<SlideViewerProps> = ({
   if (!currentSlide) return null;
 
   const isAnySlideGenerating = slides.some(s => s.isGenerating);
+  const isCurrentSlideGenerating = currentSlide.isGenerating;
 
   return (
     <div className="flex flex-col lg:flex-row h-full w-full max-w-[1600px] mx-auto p-4 md:p-8 animate-fade-in gap-8 overflow-hidden">
@@ -163,6 +166,18 @@ const SlideViewer: React.FC<SlideViewerProps> = ({
             {/* Toolbar - Top Right */}
             {!isFullscreen && (
                 <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+                    
+                    {/* Regenerate Button */}
+                    <button 
+                        onClick={() => onRegenerateSlide(currentSlideIndex)}
+                        disabled={isCurrentSlideGenerating}
+                        title={isCurrentSlideGenerating ? "Generating..." : "Regenerate Image"}
+                        className="flex items-center gap-2 px-3 py-2 bg-white/90 backdrop-blur rounded-full shadow-sm border border-notebook-accent text-sm font-medium hover:bg-white hover:text-emerald-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                    >
+                        <RotateCcw className={`w-4 h-4 ${isCurrentSlideGenerating ? 'animate-spin' : 'group-hover:-rotate-90 transition-transform duration-500'}`} />
+                        <span className="hidden sm:inline">Regenerate</span>
+                    </button>
+
                     <button 
                         onClick={handleDownloadPDF}
                         disabled={isDownloading || isAnySlideGenerating}

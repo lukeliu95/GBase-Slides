@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, RotateCcw, Key, FileText } from 'lucide-react';
+import { X, Save, Key } from 'lucide-react';
 import { DEFAULT_SYSTEM_PROMPT } from '../services/geminiService';
 import { AppSettings } from '../types';
 
@@ -24,12 +24,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
   const handleSave = () => {
     onSave({ apiKey, systemPrompt });
     onClose();
-  };
-
-  const handleResetPrompt = () => {
-    if (window.confirm("Reset system prompt to default?")) {
-      setSystemPrompt(DEFAULT_SYSTEM_PROMPT);
-    }
   };
 
   if (!isOpen) return null;
@@ -66,33 +60,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
             </div>
             <p className="text-xs text-notebook-secondary">
               Your key is stored locally in your browser. Get a key from <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline">Google AI Studio</a>.
-            </p>
-          </div>
-
-          <div className="h-px bg-notebook-accent" />
-
-          {/* System Prompt Section */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-sm font-medium text-notebook-text">
-                <FileText className="w-4 h-4 text-emerald-500" />
-                System Prompt
-              </label>
-              <button 
-                onClick={handleResetPrompt}
-                className="text-xs flex items-center gap-1 text-notebook-secondary hover:text-red-500 transition-colors"
-              >
-                <RotateCcw className="w-3 h-3" /> Reset Default
-              </button>
-            </div>
-            <textarea
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              placeholder="System instructions..."
-              className="w-full h-64 p-4 rounded-lg border border-notebook-accent focus:ring-2 focus:ring-emerald-100 focus:border-emerald-300 outline-none text-xs font-mono leading-relaxed resize-none bg-neutral-50"
-            />
-             <p className="text-xs text-notebook-secondary">
-              Customize the persona, style constraints, or output format instructions.
             </p>
           </div>
 

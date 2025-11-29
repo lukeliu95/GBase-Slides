@@ -294,24 +294,21 @@ async function retryWithBackoff<T>(
     
     // NOTE: User has confirmed they have a paid key, so we relax the "limit: 0" hard failure check.
     // However, if we see "limit: 0", it likely still means the model isn't available for the key.
-    // We will log it but attempt a retry or let the error propagate normally.
     if (typeof message === 'string' && (message.includes('limit: 0') || message.includes('quota exceeded'))) {
-       console.warn("Quota limit warning:", message);
-       // Throw to let the UI handle it, but don't prevent retries if it was transient (though limit:0 usually isn't)
+       console.warn("Quota limit warning (User Key):", message);
+       // Throw to let the UI handle it, do not retry strictly for Quota errors to avoid spamming
+       throw error; 
     }
 
-    // Check for Invalid Argument - Aspect Ratio (Don't retry if args are wrong)
-    // gemini-3-pro-image-preview SUPPORTS aspect ratio, so this error shouldn't happen unless config is malformed.
-    if (status === 400 || (typeof message === 'string' && message.includes('Aspect ratio') && !message.includes('gemini-3-pro'))) {
-       console.error("Invalid Argument configuration:", message);
+    // Check for Invalid Argument - Aspect Ratio
+    if (status === 400 || (typeof message === 'string' && message.includes('Aspect ratio'))) {
+       console.error("Invalid Argument configuration for model:", message);
        throw error; 
     }
 
     const isOverloaded = 
       status === 503 || 
-      status === 429 || // Too Many Requests
       status === 'UNAVAILABLE' ||
-      status === 'RESOURCE_EXHAUSTED' ||
       (typeof message === 'string' && (
         message.toLowerCase().includes('overloaded') || 
         message.toLowerCase().includes('unavailable')
@@ -487,6 +484,13 @@ export const generateSlideImage = async (
   referenceImage?: string,
   detectedLanguage?: string
 ): Promise<string> => {
+  // Debug Log to verify Key Usage
+  if (apiKey) {
+    console.log(`[GeminiService] Initializing ${IMAGE_MODEL} with API Key ending in ...${apiKey.slice(-4)}`);
+  } else {
+    console.error("[GeminiService] Missing API Key for image generation!");
+  }
+
   const ai = getClient(apiKey);
   
   // 1. 动态构建高质量 Prompt
@@ -562,10 +566,17 @@ ${enhancedPrompt}
         }
       }
       
+      // If we got here with no error but no image, check textual fallback
+      const textOutput = response.text;
+      if (textOutput) {
+          console.warn("Model returned text instead of image:", textOutput);
+          throw new Error("Model returned text description instead of visual image.");
+      }
+
       throw new Error("No image data found in response");
     } catch (error) {
       console.error("Internal generation attempt failed", error);
       throw error;
     }
-  }, 3, 2000); 
+  }, 1, 2000); // Reduced retries for heavy image generation to avoid burning quota on failures
 };
