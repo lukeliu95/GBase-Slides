@@ -283,7 +283,7 @@ const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: s
 
 async function retryWithBackoff<T>(
   operation: () => Promise<T>,
-  retries = 3,
+  retries = 2, // 减少重试次数，因为我们在应用层已经做了长延时队列
   initialDelay = 1500
 ): Promise<T> {
   try {
@@ -489,10 +489,9 @@ export const generateSlideImage = async (
     console.log(`[GeminiService] Initializing ${IMAGE_MODEL} with API Key ending in ...${apiKey.slice(-4)}`);
   } else {
     console.error("[GeminiService] Missing API Key for image generation!");
+    throw new Error("API Key is missing");
   }
 
-  const ai = getClient(apiKey);
-  
   // 1. 动态构建高质量 Prompt
   const langInstruction = detectedLanguage 
     ? `Language Requirement: Text shown in the image MUST be in ${detectedLanguage}.` 
@@ -543,6 +542,11 @@ ${enhancedPrompt}
 
   return retryWithBackoff(async () => {
     try {
+      // 🟢 核心修改：即用即抛 (Use and Discard)
+      // 每次请求（包括重试）都重新实例化客户端，以确保没有任何状态残留
+      // This ensures a fresh instance for every request to optimize quota handling
+      const ai = getClient(apiKey);
+
       // Use standard generateContent for Gemini 3 Pro Image Preview
       // It supports imageConfig with aspectRatio and imageSize.
       const response = await ai.models.generateContent({

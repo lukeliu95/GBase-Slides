@@ -5,7 +5,7 @@ import InputSection from './components/InputSection';
 import ProcessingState from './components/ProcessingState';
 import SlideViewer from './components/SlideViewer';
 import SettingsModal from './components/SettingsModal';
-import { Sparkles, Settings as SettingsIcon, Banana } from 'lucide-react';
+import { Sparkles, Settings as SettingsIcon, Banana, Clock, Hourglass } from 'lucide-react';
 
 function App() {
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
@@ -23,6 +23,14 @@ function App() {
 
   // Reference Template State
   const [referenceImageBase64, setReferenceImageBase64] = useState<string | undefined>(undefined);
+
+  // Queue & ETA State (新增：用于处理速率限制的队列状态)
+  const [queueStatus, setQueueStatus] = useState<{
+    currentSlide: number;
+    totalSlides: number;
+    nextRequestCountdown: number; // 距离下一次请求的倒计时(秒)
+    totalEstimatedTime: number;   // 总预计剩余时间(秒)
+  } | null>(null);
 
   // Load Settings on Mount
   useEffect(() => {
@@ -101,8 +109,9 @@ function App() {
       setSlides(result.slides);
       setAppState(AppState.GENERATING_IMAGES);
 
-      // 2. Start generating images. 
-      generateImagesForSlides(result.slides, result.globalStyleDefinition, result.detectedLanguage);
+      // 2. Start generating images with Queue Logic
+      // Explicitly pass apiKey to ensure the closure uses the correct key
+      generateImagesForSlides(result.slides, result.globalStyleDefinition, result.detectedLanguage, settings.apiKey);
 
     } catch (err: any) {
       console.error("App Error:", err);
@@ -116,13 +125,62 @@ function App() {
     }
   };
 
-  const generateImagesForSlides = async (slideList: SlideContent[], globalStyle: string, detectedLanguage: string) => {
+  // ============================================================================
+  // ⚡️ 核心逻辑：带速率限制队列的图片生成器
+  // ============================================================================
+  const generateImagesForSlides = async (
+    slideList: SlideContent[], 
+    globalStyle: string, 
+    detectedLanguage: string,
+    apiKey: string // Explicitly passed
+  ) => {
     let firstSlideImage: string | undefined = undefined;
+    
+    // 设置每张图片之间的强制等待时间（Gemini 3 Pro Tier 1 限制为 1 RPM，所以我们需要 > 60秒）
+    // 设置为 65 秒以留出缓冲
+    const WAIT_TIME_SECONDS = 65; 
 
     // Execute sequentially to prevent rate limiting / overloading
     for (let i = 0; i < slideList.length; i++) {
       const slide = slideList[i];
+      
+      // 更新队列状态 UI
+      setQueueStatus({
+        currentSlide: i + 1,
+        totalSlides: slideList.length,
+        nextRequestCountdown: 0,
+        // 计算剩余时间：(剩余张数 * 每张等待时间) + 当前生成预估时间(10s)
+        totalEstimatedTime: ((slideList.length - 1 - i) * WAIT_TIME_SECONDS) + 10 
+      });
+
       try {
+        // --- 速率限制强制等待逻辑 (Rate Limit Enforcement) ---
+        // 第一张图直接生成，后续每一张图都需要等待，以满足 1 RPM 的限制
+        if (i > 0) {
+            let countdown = WAIT_TIME_SECONDS;
+            while (countdown > 0) {
+                // 更新倒计时状态
+                setQueueStatus({
+                    currentSlide: i + 1,
+                    totalSlides: slideList.length,
+                    nextRequestCountdown: countdown,
+                    totalEstimatedTime: (countdown) + ((slideList.length - 1 - i) * WAIT_TIME_SECONDS)
+                });
+                
+                // 等待 1 秒
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                countdown--;
+            }
+        }
+        
+        // 等待结束，开始调用 API
+        setQueueStatus(prev => prev ? { ...prev, nextRequestCountdown: 0 } : null); // 清除倒计时显示
+
+        // Set current slide to loading
+        setSlides(prevSlides => 
+            prevSlides.map(s => s.id === slide.id ? { ...s, isGenerating: true } : s)
+        );
+
         // Logic for Reference Image:
         // Priority 1: If user uploaded a Reference Template (referenceImageBase64), use it for EVERY slide to ensure high fidelity to that template.
         // Priority 2: If no template, use the First Generated Slide (firstSlideImage) as a reference for subsequent slides (index > 0) to maintain consistency.
@@ -134,9 +192,10 @@ function App() {
           referenceToUse = firstSlideImage;
         }
 
+        // 使用传入的 apiKey，而不是依赖 settings.apiKey
         const imageUrl = await generateSlideImage(
           slide.visualPrompt, 
-          settings.apiKey, 
+          apiKey, 
           globalStyle,
           referenceToUse,
           detectedLanguage
@@ -168,6 +227,7 @@ function App() {
     }
     
     // Once the loop is done (all success or fail), mark complete
+    setQueueStatus(null);
     setAppState(AppState.COMPLETE);
   };
 
@@ -254,6 +314,13 @@ function App() {
     }
   };
 
+  // Helper to format seconds into MM:SS
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}m ${s}s`;
+  };
+
   return (
     <div className="fixed inset-0 flex flex-col bg-notebook-bg font-sans text-notebook-text selection:bg-notebook-highlight">
       {/* Top Navigation Bar */}
@@ -261,7 +328,7 @@ function App() {
         <div 
           className="flex items-center gap-4 cursor-pointer group" 
           onClick={() => {
-            if (appState !== AppState.ANALYZING_TEXT) {
+            if (appState !== AppState.ANALYZING_TEXT && !queueStatus) {
                 setAppState(AppState.IDLE);
                 setSlides([]);
                 setAnalysis(null);
@@ -285,15 +352,36 @@ function App() {
         </div>
         
         <div className="flex items-center gap-4">
+           {/* 状态显示区域：完成状态 */}
            {appState === AppState.COMPLETE && (
                <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100 flex items-center gap-1.5 shadow-sm">
                    <Sparkles className="w-3 h-3" /> Ready
                </span>
            )}
-           {appState === AppState.GENERATING_IMAGES && (
-               <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 flex items-center gap-1.5 shadow-sm">
-                   <div className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" /> Generating visuals...
-               </span>
+
+           {/* 状态显示区域：生成中与队列倒计时 */}
+           {appState === AppState.GENERATING_IMAGES && queueStatus && (
+               <div className="flex items-center gap-3">
+                   {/* 进度显示 */}
+                   <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 flex items-center gap-1.5 shadow-sm">
+                       <div className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" /> 
+                       Generating {queueStatus.currentSlide}/{queueStatus.totalSlides}
+                   </span>
+                   
+                   {/* 倒计时警告 (Tier 1 限制) */}
+                   {queueStatus.nextRequestCountdown > 0 && (
+                       <span className="text-xs font-medium text-amber-600 bg-amber-50 px-3 py-1.5 rounded-full border border-amber-100 flex items-center gap-1.5 shadow-sm animate-pulse">
+                           <Hourglass className="w-3 h-3" /> 
+                           Cooling down: {queueStatus.nextRequestCountdown}s
+                       </span>
+                   )}
+
+                   {/* 总预计时间 */}
+                   <span className="text-xs font-medium text-notebook-secondary bg-neutral-100 px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm">
+                       <Clock className="w-3 h-3" /> 
+                       ETA: {formatTime(queueStatus.totalEstimatedTime)}
+                   </span>
+               </div>
            )}
            
            <button 
